@@ -2,7 +2,7 @@ import sys
 import json
 import copy
 import logging
-import datetime
+from datetime import datetime
 from slackclient import SlackClient
 from datalib.tool.logging import Logging
 
@@ -26,6 +26,9 @@ class SlackbotLogger(object):
 
     def set_level(self, level):
         self.log_level = level
+
+    def set_token(self, token):
+        self.sc = SlackClient(token)
 
     def get_color(self, level):
         if level in self.colors:
@@ -125,12 +128,17 @@ class SlackbotLogger(object):
 class MultiLogger(object):
 
     def __init__(self, service_name, log_level=logging.INFO, slack_token=None,
-                 json_encoder=json.JSONEncoder, log_stream=sys.stdout):
-        self.logger = Logging(service_name, stream=log_stream)
+                 json_encoder=json.JSONEncoder, slack_channels=None, log_stream=sys.stdout):
+        self.json_encoder = json_encoder
+        self.logger = Logging(service_name, stream=log_stream).logger
         self.logger.setLevel(log_level)
         self.slack_logger = SlackbotLogger(slack_token, log_level=log_level,
                                            json_encoder=json_encoder)
+
         self.log_meta = {}
+        if self.json_encoder != json.JSONEncoder:
+            self.log_meta["json_encoder"] = str(self.json_encoder)
+        self.slack_channels = slack_channels
 
     def set_level(self, level):
         self.logger.setLevel(level)
@@ -143,13 +151,26 @@ class MultiLogger(object):
         self.logger.setLevel(level)
 
     def log(self, lvl, msg):
-        self.logger.log(lvl, msg)
+        log_msg = copy.deepcopy(msg)
+        if self.log_meta:
+            log_msg = {"msg": log_msg, **self.log_meta}
+        log_msg = json.loads(json.dumps(log_msg, cls=self.json_encoder))
+        self.logger.log(lvl, log_msg)
         self.slack_logger.log(lvl, msg)
 
-    def send(self, channels, **kwargs):
-        self.slack_logger.send(channels, **kwargs)
+    def send(self, channels=None, **kwargs):
+        if not channels:
+            channels = self.slack_channels
+        if channels:
+            res = self.slack_logger.send(channels, **kwargs)
+            if not res.get("ok"):
+                self.logger.log(logging.WARN, f"slackbot error: {res}")
+        else:
+            msg = "Attempted to send slack logs but no channels specified"
+            self.logger.log(logging.DEBUG, msg)
 
-    def set_meta(self, name, value, **kwargs):
-        self.log_meta[name] = value
-        self.slack_logger.push_meta_data(name, value, **kwargs)
+    def set_meta(self, **kwargs):
+        self.log_meta = {**self.log_meta, **kwargs}
+        for name, msg in kwargs.items():
+            self.slack_logger.push_meta_data(name, msg)
 
