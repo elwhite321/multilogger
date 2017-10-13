@@ -163,7 +163,7 @@ class MultiLogger(object):
             channels = self.slack_channels
         if channels:
             res = self.slack_logger.send(channels, **kwargs)
-            if not res.get("ok"):
+            if res and not res.get("ok"):
                 self.logger.log(logging.WARN, f"slackbot error: {res}")
         else:
             msg = "Attempted to send slack logs but no channels specified"
