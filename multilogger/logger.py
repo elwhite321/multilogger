@@ -4,7 +4,44 @@ import copy
 import logging
 from datetime import datetime
 from slackclient import SlackClient
-from datalib.tool.logging import Logging
+
+
+def get_script_logger(logger_name, logging_level):
+    formatter = logging.Formatter('%(levelname)s - %(asctime)s - %(name)s - %(module)s - %(message)s')
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging_level)
+    logger.addHandler(handler)
+
+    return logger
+
+
+def get_json_logger(logger_name, logging_level):
+    formatter = logging.Formatter(
+                json.dumps(
+                    {
+                        'logging_level': '%(levelname)s',
+                        'logger_name': '%(name)s',
+                        'pathname': '%(pathname)s',
+                        'module': '%(module)s',
+                        'filename': '%(filename)s',
+                        'funcName': '%(funcName)s',
+                        'lineno': '%(lineno)d',
+                        'message': '%(message)s'
+                    }
+                )
+            )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging_level)
+    logger.addHandler(handler)
+
+    return logger
+
 
 class SlackbotLogger(object):
     def __init__(self, slack_token, log_level=logging.WARN,
@@ -91,9 +128,6 @@ class SlackbotLogger(object):
                     copy.deepcopy(self.msg["attachments"][n])
                 )
                 del_msg_idx.append(n)
-        for n in reversed(del_msg_idx):
-            del self.msg["attachments"][n]
-            del self.msg_levels[n]
         res = None
         if send_msg != {"attachments": []} and channels:
             if self.meta_data["fields"]:
@@ -110,6 +144,12 @@ class SlackbotLogger(object):
                     as_user=True,
                     **msg
                 )
+                if not res["ok"]:
+                    break
+        if res and res["ok"]:
+            for n in reversed(del_msg_idx):
+                del self.msg["attachments"][n]
+                del self.msg_levels[n]
         return res
 
     def clear(self):
@@ -128,10 +168,9 @@ class SlackbotLogger(object):
 class MultiLogger(object):
 
     def __init__(self, service_name, log_level=logging.INFO, slack_token=None,
-                 json_encoder=json.JSONEncoder, slack_channels=None, log_stream=sys.stdout):
+                 json_encoder=json.JSONEncoder, slack_channels=None):
         self.json_encoder = json_encoder
-        self.logger = Logging(service_name, stream=log_stream).logger
-        self.logger.setLevel(log_level)
+        self.logger = get_json_logger(service_name, log_level)
         self.slack_logger = SlackbotLogger(slack_token, log_level=log_level,
                                            json_encoder=json_encoder)
 
